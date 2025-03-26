@@ -90,10 +90,18 @@ const handleConnection = async (listener, connection) => {
   const headers = {};
   for (let i = 1; i < requestLines.length; i++) {
     const line = requestLines[i];
-    if (line) {
-      const [key, ...valueParts] = line.split(": ");
-      headers[key] = valueParts.join(": ");
+    if (!line) {
+      continue;
     }
+
+    const index = line.indexOf(": ");
+    if (index < 0) {
+      continue;
+    }
+
+    const key = line.slice(0, index);
+    const value = line.slice(index + 2);
+    headers[key] = value;
   }
 
   const method = requestLine[0];
