@@ -1,8 +1,10 @@
 import type { Plugin } from 'vite';
+import {
+  unstable_getBuildOptions,
+  unstable_builderConstants,
+} from '../../server.js';
 
-import { unstable_getBuildOptions } from '../../server.js';
-import { SRC_ENTRIES } from '../constants.js';
-import { DIST_PUBLIC } from '../builder/constants.js';
+const { SRC_ENTRIES, DIST_PUBLIC } = unstable_builderConstants;
 
 const SERVE_JS = 'serve-txiki.js';
 
