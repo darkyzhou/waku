@@ -60,6 +60,7 @@ import { deployCloudflarePlugin } from '../plugins/vite-plugin-deploy-cloudflare
 import { deployDenoPlugin } from '../plugins/vite-plugin-deploy-deno.js';
 import { deployPartykitPlugin } from '../plugins/vite-plugin-deploy-partykit.js';
 import { deployAwsLambdaPlugin } from '../plugins/vite-plugin-deploy-aws-lambda.js';
+import { deployTxikiPlugin } from '../plugins/vite-plugin-deploy-txiki.js';
 import { emitPlatformData } from './platform-data.js';
 
 // TODO this file and functions in it are too long. will fix.
@@ -88,6 +89,7 @@ const deployPlugins = (config: ConfigDev) => [
   deployDenoPlugin(config),
   deployPartykitPlugin(config),
   deployAwsLambdaPlugin(config),
+  deployTxikiPlugin(config),
 ];
 
 const analyzeEntries = async (rootDir: string, config: ConfigDev) => {
@@ -703,6 +705,7 @@ export async function build(options: {
     | 'partykit'
     | 'deno'
     | 'aws-lambda'
+    | 'txiki'
     | undefined;
 }) {
   const env = options.env || {};

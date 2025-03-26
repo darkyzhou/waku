@@ -22,7 +22,9 @@ export function rscEntriesPlugin(opts: {
   moduleMap: Record<string, string>;
 }): Plugin {
   const codeToPrepend = `
-globalThis.AsyncLocalStorage = require('node:async_hooks').AsyncLocalStorage;
+try {
+  globalThis.AsyncLocalStorage = require('node:async_hooks').AsyncLocalStorage;
+} catch {}
 `;
   const codeToAppend = `
 export const configPrd = {

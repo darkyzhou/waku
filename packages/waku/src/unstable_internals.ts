@@ -8,6 +8,7 @@ export { deployDenoPlugin } from './lib/plugins/vite-plugin-deploy-deno.js';
 export { deployNetlifyPlugin } from './lib/plugins/vite-plugin-deploy-netlify.js';
 export { deployPartykitPlugin } from './lib/plugins/vite-plugin-deploy-partykit.js';
 export { deployVercelPlugin } from './lib/plugins/vite-plugin-deploy-vercel.js';
+export { deployTxikiPlugin } from './lib/plugins/vite-plugin-deploy-txiki.js';
 export { devCommonJsPlugin } from './lib/plugins/vite-plugin-dev-commonjs.js';
 export { nonjsResolvePlugin } from './lib/plugins/vite-plugin-nonjs-resolve.js';
 export { rscAnalyzePlugin } from './lib/plugins/vite-plugin-rsc-analyze.js';

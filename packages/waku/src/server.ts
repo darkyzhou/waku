@@ -80,6 +80,7 @@ type BuildOptions = {
     | 'partykit'
     | 'deno'
     | 'aws-lambda'
+    | 'txiki'
     | undefined;
   unstable_phase?:
     | 'analyzeEntries'
