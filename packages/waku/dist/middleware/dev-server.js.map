@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/middleware/dev-server.ts"],"sourcesContent":["export { devServer as default } from '../lib/middleware/dev-server.js';\n"],"names":["devServer","default"],"mappings":"AAAA,SAASA,aAAaC,OAAO,QAAQ,kCAAkC"}

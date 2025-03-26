@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/minimal/server.ts"],"sourcesContent":["import type { EntriesDev } from '../lib/types.js';\n\nexport function unstable_defineEntries(fns: EntriesDev['default']) {\n  return fns;\n}\n"],"names":["unstable_defineEntries","fns"],"mappings":"AAEA,OAAO,SAASA,uBAAuBC,GAA0B;IAC/D,OAAOA;AACT"}

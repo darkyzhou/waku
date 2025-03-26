@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/middleware/context.ts"],"sourcesContent":["export { context as default } from '../lib/middleware/context.js';\nexport { getContext, getContextData } from '../lib/middleware/context.js';\n"],"names":["context","default","getContext","getContextData"],"mappings":"AAAA,SAASA,WAAWC,OAAO,QAAQ,+BAA+B;AAClE,SAASC,UAAU,EAAEC,cAAc,QAAQ,+BAA+B"}

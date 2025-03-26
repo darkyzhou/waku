@@ -1,0 +1,1 @@
+{"version":3,"sources":["../src/client.ts"],"sourcesContent":["/**\n * Highly experimental, the name might change.\n */\nexport const unstable_allowServer = <T>(x: T) => x;\n"],"names":["unstable_allowServer","x"],"mappings":"AAAA;;CAEC,GACD,OAAO,MAAMA,uBAAuB,CAAIC,IAASA,EAAE"}

@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/middleware/handler.ts"],"sourcesContent":["export { handler as default } from '../lib/middleware/handler.js';\n"],"names":["handler","default"],"mappings":"AAAA,SAASA,WAAWC,OAAO,QAAQ,+BAA+B"}

@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/middleware/fallback.ts"],"sourcesContent":["export { fallback as default } from '../lib/middleware/fallback.js';\n"],"names":["fallback","default"],"mappings":"AAAA,SAASA,YAAYC,OAAO,QAAQ,gCAAgC"}

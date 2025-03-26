@@ -1,9 +1,10 @@
 *~
 *.swp
 node_modules
-dist
 /packages/waku/README.md
 /packages/create-waku/template
+/packages/create-waku/dist
+/packages/website/dist
 .env
 .devcontainer
 .vscode
