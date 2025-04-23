@@ -8,7 +8,8 @@ export const loadServerModule = async (idOrFileURL)=>{
     const vite = await createViteServer({
         server: {
             middlewareMode: true,
-            watch: null
+            watch: null,
+            ws: false
         },
         appType: 'custom',
         environments: {

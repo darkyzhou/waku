@@ -2,7 +2,6 @@ import { unstable_getBuildOptions, unstable_builderConstants } from '../../serve
 const { SRC_ENTRIES, DIST_PUBLIC } = unstable_builderConstants;
 const SERVE_JS = 'serve-txiki.js';
 const getServeJsContent = (distDir, distPublic, srcEntriesFile)=>`
-import ffi from "tjs:ffi";
 import getopts from "tjs:getopts";
 
 const { serverEngine, importHono, importHonoServeStatic } = await import('waku/unstable_hono');
@@ -70,39 +69,40 @@ const ENCODER = new TextEncoder();
 const ENCODED_NEWLINE = ENCODER.encode("\\r\\n");
 const ENCODED_CHUNK_END = ENCODER.encode("0\\r\\n\\r\\n");
 
-const handleConnection = async (listener, connection) => {
-  const buf = new Uint8Array(1024);
-  await connection.read(buf);
-  const requestString = ffi.bufferToString(buf);
-  const requestLines = requestString.split("\\r\\n");
-  const requestLine = requestLines[0].split(" ");
-  const headers = {};
-  for (let i = 1; i < requestLines.length; i++) {
-    const line = requestLines[i];
-    if (!line) {
-      continue;
-    }
-
-    const index = line.indexOf(": ");
-    if (index < 0) {
-      continue;
-    }
-
-    const key = line.slice(0, index);
-    const value = line.slice(index + 2);
-    headers[key] = value;
+const parseRequestPayload = (request) => {
+  if (!request || !request.includes('\\r\\n\\r\\n')) {
+    return;
   }
 
-  const method = requestLine[0];
-  const path = requestLine[1];
-  const protocol = requestLine[2];
+  const [requestLineAndHeaders, body] = request.split("\r\n\r\n");
+  const theBody = !body ? undefined : body;
+  try {
+    const [requestLine, ...requestLines] = requestLineAndHeaders.split("\\r\\n");
+    const [method, path, protocol] = requestLine.split(" ");
+    const headers = Object.fromEntries(requestLines.map(line => line.split(': ', 2)).filter(([key]) => key));
+    return { method, path, protocol, headers, body: theBody };
+  } catch (e) {
+    console.error(\`parseRequestPayload error: \${e}, request: \${request}\`);
+    return null;
+  }
+}
+
+const handleConnection = async (listener, connection) => {
+  let len = 0;
+  const buf = new Uint8Array(65536);
+  const nread = await connection.read(buf);
+  len += (nread || 0);
+  
+  const requestString = new TextDecoder().decode(buf.subarray(0, len));
+  const parseResult = parseRequestPayload(requestString);
+  if (!parseResult) {
+    return;
+  }
+
+  const { method, path, protocol, headers, body } = parseResult;
   const url = \`http://localhost:\${listener.localAddress.port}\${path}\`;
-  const request = new Request(url, {
-    method,
-    path,
-    protocol,
-    headers,
-  });
+  const request = new Request(url, { method, path, protocol, headers, body });
+
   const response = await HONO_APP.fetch(request);
   let responseHeaders = "";
   for (const [key, value] of response.headers.entries()) {

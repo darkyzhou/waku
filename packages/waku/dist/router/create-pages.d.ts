@@ -71,8 +71,20 @@ export type CreateApi = <Path extends string>(params: {
 } | {
     render: 'dynamic';
     path: Path;
-    handlers: Partial<Record<Method, ApiHandler>>;
+    /**
+     * Handlers by named method. Use `all` to handle all methods.
+     * Named methods will take precedence over `all`.
+     */
+    handlers: Partial<Record<Method | 'all', ApiHandler>>;
 }) => void;
+export type CreatePagePart = <const Path extends string>(params: {
+    path: Path;
+    render: 'static' | 'dynamic';
+    order: number;
+    component: FunctionComponent<{
+        children: ReactNode;
+    }>;
+}) => typeof params;
 type RootItem = {
     render: 'static' | 'dynamic';
     component: FunctionComponent<{
@@ -85,6 +97,11 @@ export declare const createPages: <AllPages extends (AnyPage | ReturnType<Create
     createLayout: CreateLayout;
     createRoot: CreateRoot;
     createApi: CreateApi;
+    /**
+     * Page Part pages will be dynamic when any part is dynamic.
+     * If all parts are static, the page will be static.
+     */
+    createPagePart: CreatePagePart;
 }) => Promise<AllPages>) => {
     handleRequest: import("../lib/types.js").HandleRequest;
     handleBuild: import("../lib/types.js").HandleBuild;

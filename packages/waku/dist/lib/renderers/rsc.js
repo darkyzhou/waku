@@ -4,6 +4,7 @@ import { bufferToString, parseFormData } from '../utils/buffer.js';
 const resolveClientEntryForPrd = (id, config)=>{
     return config.basePath + id + '.js';
 };
+const temporaryReferencesMap = new WeakMap();
 export async function renderRsc(config, ctx, elements, onError, moduleIdCallback) {
     const modules = ctx.unstable_modules;
     if (!modules) {
@@ -33,7 +34,8 @@ export async function renderRsc(config, ctx, elements, onError, moduleIdCallback
                 // This is not correct according to the type though.
                 return err.digest;
             }
-        }
+        },
+        temporaryReferences: temporaryReferencesMap.get(ctx)
     });
 }
 export function renderRscElement(config, ctx, element, onError) {
@@ -64,7 +66,8 @@ export function renderRscElement(config, ctx, element, onError) {
                 // This is not correct according to the type though.
                 return err.digest;
             }
-        }
+        },
+        temporaryReferences: temporaryReferencesMap.get(ctx)
     });
 }
 export async function collectClientModules(config, rsdwServer, elements) {
@@ -105,7 +108,7 @@ export async function decodeBody(ctx) {
     if (!modules) {
         throw new Error('handler middleware required (missing modules)');
     }
-    const { default: { decodeReply } } = modules.rsdwServer;
+    const { default: { decodeReply, createTemporaryReferenceSet } } = modules.rsdwServer;
     const serverBundlerConfig = new Proxy({}, {
         get (_target, encodedId) {
             const [fileId, name] = encodedId.split('#');
@@ -122,15 +125,21 @@ export async function decodeBody(ctx) {
     });
     let decodedBody = ctx.req.url.searchParams;
     if (ctx.req.body) {
+        const temporaryReferences = createTemporaryReferenceSet();
+        temporaryReferencesMap.set(ctx, temporaryReferences);
         const bodyBuf = await streamToArrayBuffer(ctx.req.body);
         const contentType = ctx.req.headers['content-type'];
         if (typeof contentType === 'string' && contentType.startsWith('multipart/form-data')) {
             // XXX This doesn't support streaming unlike busboy
             const formData = await parseFormData(bodyBuf, contentType);
-            decodedBody = await decodeReply(formData, serverBundlerConfig);
+            decodedBody = await decodeReply(formData, serverBundlerConfig, {
+                temporaryReferences
+            });
         } else if (bodyBuf.byteLength > 0) {
             const bodyStr = bufferToString(bodyBuf);
-            decodedBody = await decodeReply(bodyStr, serverBundlerConfig);
+            decodedBody = await decodeReply(bodyStr, serverBundlerConfig, {
+                temporaryReferences
+            });
         }
     }
     return decodedBody;

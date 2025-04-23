@@ -4,7 +4,7 @@ import { createContext, createElement, memo, use, useCallback, useEffect, useSta
 import RSDWClient from 'react-server-dom-webpack/client';
 import { createCustomError } from '../lib/utils/custom-errors.js';
 import { encodeRscPath, encodeFuncId } from '../lib/renderers/utils.js';
-const { createFromFetch, encodeReply } = RSDWClient;
+const { createFromFetch, encodeReply, createTemporaryReferenceSet } = RSDWClient;
 const DEFAULT_HTML_HEAD = [
     createElement('meta', {
         charSet: 'utf-8'
@@ -69,11 +69,15 @@ const defaultFetchCache = {};
  */ export const unstable_callServerRsc = async (funcId, args, fetchCache = defaultFetchCache)=>{
     const enhanceFetch = fetchCache[ENHANCE_FETCH] || ((f)=>f);
     const enhanceCreateData = fetchCache[ENHANCE_CREATE_DATA] || ((d)=>d);
+    const temporaryReferences = createTemporaryReferenceSet();
     const createData = (responsePromise)=>createFromFetch(checkStatus(responsePromise), {
-            callServer: (funcId, args)=>unstable_callServerRsc(funcId, args, fetchCache)
+            callServer: (funcId, args)=>unstable_callServerRsc(funcId, args, fetchCache),
+            temporaryReferences
         });
     const url = BASE_RSC_PATH + encodeRscPath(encodeFuncId(funcId));
-    const responsePromise = args.length === 1 && args[0] instanceof URLSearchParams ? enhanceFetch(fetch)(url + '?' + args[0]) : encodeReply(args).then((body)=>enhanceFetch(fetch)(url, {
+    const responsePromise = args.length === 1 && args[0] instanceof URLSearchParams ? enhanceFetch(fetch)(url + '?' + args[0]) : encodeReply(args, {
+        temporaryReferences
+    }).then((body)=>enhanceFetch(fetch)(url, {
             method: 'POST',
             body
         }));
@@ -84,9 +88,12 @@ const defaultFetchCache = {};
     return value;
 };
 const prefetchedParams = new WeakMap();
-const fetchRscInternal = (url, rscParams, fetchCache)=>{
+const prefetchedTemporaryReferences = new WeakMap();
+const fetchRscInternal = (url, rscParams, temporaryReferences, fetchCache)=>{
     const enhanceFetch = fetchCache[ENHANCE_FETCH] || ((f)=>f);
-    return rscParams === undefined ? enhanceFetch(fetch)(url) : rscParams instanceof URLSearchParams ? enhanceFetch(fetch)(url + '?' + rscParams) : encodeReply(rscParams).then((body)=>enhanceFetch(fetch)(url, {
+    return rscParams === undefined ? enhanceFetch(fetch)(url) : rscParams instanceof URLSearchParams ? enhanceFetch(fetch)(url + '?' + rscParams) : encodeReply(rscParams, {
+        temporaryReferences
+    }).then((body)=>enhanceFetch(fetch)(url, {
             method: 'POST',
             body
         }));
@@ -97,15 +104,17 @@ export const fetchRsc = (rscPath, rscParams, fetchCache = defaultFetchCache)=>{
         return entry[2];
     }
     const enhanceCreateData = fetchCache[ENHANCE_CREATE_DATA] || ((d)=>d);
-    const createData = (responsePromise)=>createFromFetch(checkStatus(responsePromise), {
-            callServer: (funcId, args)=>unstable_callServerRsc(funcId, args, fetchCache)
-        });
     const prefetched = globalThis.__WAKU_PREFETCHED__ ||= {};
     const url = BASE_RSC_PATH + encodeRscPath(rscPath);
     const hasValidPrefetchedResponse = !!prefetched[url] && // HACK .has() is for the initial hydration
     // It's limited and may result in a wrong result. FIXME
     (!prefetchedParams.has(prefetched[url]) || prefetchedParams.get(prefetched[url]) === rscParams);
-    const responsePromise = hasValidPrefetchedResponse ? prefetched[url] : fetchRscInternal(url, rscParams, fetchCache);
+    const temporaryReferences = prefetchedTemporaryReferences.get(prefetched[url]) || createTemporaryReferenceSet();
+    const createData = (responsePromise)=>createFromFetch(checkStatus(responsePromise), {
+            callServer: (funcId, args)=>unstable_callServerRsc(funcId, args, fetchCache),
+            temporaryReferences
+        });
+    const responsePromise = hasValidPrefetchedResponse ? prefetched[url] : fetchRscInternal(url, rscParams, temporaryReferences, fetchCache);
     delete prefetched[url];
     const data = enhanceCreateData(createData)(responsePromise);
     fetchCache[ENTRY] = [
@@ -119,8 +128,10 @@ export const prefetchRsc = (rscPath, rscParams, fetchCache = defaultFetchCache)=
     const prefetched = globalThis.__WAKU_PREFETCHED__ ||= {};
     const url = BASE_RSC_PATH + encodeRscPath(rscPath);
     if (!(url in prefetched)) {
-        prefetched[url] = fetchRscInternal(url, rscParams, fetchCache);
+        const temporaryReferences = createTemporaryReferenceSet();
+        prefetched[url] = fetchRscInternal(url, rscParams, temporaryReferences, fetchCache);
         prefetchedParams.set(prefetched[url], rscParams);
+        prefetchedTemporaryReferences.set(prefetched[url], temporaryReferences);
     }
 };
 const RefetchContext = createContext(()=>{

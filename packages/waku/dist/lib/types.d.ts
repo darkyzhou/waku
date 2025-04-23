@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Config } from '../config.js';
+import type { Middleware } from '../config.js';
 import type { ConfigPrd } from '../lib/config.js';
 import type { PathSpec } from '../lib/utils/path.js';
 type Elements = Record<string, unknown>;
@@ -65,9 +65,12 @@ export type EntriesDev = {
     };
 };
 export type EntriesPrd = EntriesDev & {
-    loadConfig: () => Promise<Config>;
     configPrd: ConfigPrd;
+    loadMiddleware: () => Promise<{
+        default: Middleware;
+    }[]>;
     loadModule: (id: string) => Promise<unknown>;
+    defaultHtmlHead: string;
     dynamicHtmlPaths: [pathSpec: PathSpec, htmlHead: string][];
     publicIndexHtml: string;
     loadPlatformData?: (key: string) => Promise<unknown>;

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PathSpec } from '../lib/utils/path.js';
+export declare function unstable_getRscParams(): unknown;
 export declare function unstable_rerenderRoute(pathname: string, query?: string): void;
 export declare function unstable_notFound(): never;
 export declare function unstable_redirect(location: string, status?: 307 | 308): never;

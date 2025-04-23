@@ -11,7 +11,7 @@ declare global {
         readonly env: Record<string, string>;
     }
 }
-export declare function useRouter_UNSTABLE(): {
+export declare function useRouter(): {
     push: (to: InferredPaths, options?: {
         /**
          * indicates if the link should scroll or not on navigation
@@ -113,9 +113,8 @@ export declare function Router({ routerData, initialRoute, unstable_enhanceFetch
  * ServerRouter for SSR
  * This is not a public API.
  */
-export declare function INTERNAL_ServerRouter({ route }: {
+export declare function INTERNAL_ServerRouter({ route, httpstatus, }: {
     route: RouteProps;
-}): import("react").FunctionComponentElement<{
-    children?: ReactNode | undefined;
-}>;
+    httpstatus: number;
+}): import("react").FunctionComponentElement<import("react").FragmentProps>;
 export {};

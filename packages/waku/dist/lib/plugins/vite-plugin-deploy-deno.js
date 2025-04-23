@@ -1,7 +1,7 @@
 import { unstable_getBuildOptions, unstable_builderConstants } from '../../server.js';
 const { SRC_ENTRIES, DIST_PUBLIC } = unstable_builderConstants;
 const SERVE_JS = 'serve-deno.js';
-const getServeJsContent = (distDir, distPublic, srcEntriesFile)=>`
+const getServeJsContent = (distDir, distPublic, srcEntriesFile, honoEnhancerFile)=>`
 import { Hono } from 'jsr:@hono/hono';
 import { serveStatic } from 'jsr:@hono/hono/deno';
 import { serverEngine } from 'waku/unstable_hono';
@@ -9,7 +9,9 @@ import { serverEngine } from 'waku/unstable_hono';
 const distDir = '${distDir}';
 const publicDir = '${distPublic}';
 const loadEntries = () => import('${srcEntriesFile}');
-const configPromise = loadEntries().then((entries) => entries.loadConfig());
+const loadHonoEnhancer = async () => {
+  ${honoEnhancerFile ? `return (await import('${honoEnhancerFile}')).default;` : `return (fn) => fn;`}
+};
 const env = Deno.env.toObject();
 
 const createApp = (app) => {
@@ -29,8 +31,7 @@ const createApp = (app) => {
   return app;
 };
 
-const honoEnhancer =
-  (await configPromise).unstable_honoEnhancer || ((createApp) => createApp);
+const honoEnhancer = await loadHonoEnhancer();
 const app = honoEnhancer(createApp)(new Hono());
 
 Deno.serve(app.fetch);
@@ -38,6 +39,7 @@ Deno.serve(app.fetch);
 export function deployDenoPlugin(opts) {
     const buildOptions = unstable_getBuildOptions();
     let entriesFile;
+    let honoEnhancerFile;
     return {
         name: 'deploy-deno-plugin',
         config (viteConfig) {
@@ -52,6 +54,9 @@ export function deployDenoPlugin(opts) {
         },
         configResolved (config) {
             entriesFile = `${config.root}/${opts.srcDir}/${SRC_ENTRIES}`;
+            if (opts.unstable_honoEnhancer) {
+                honoEnhancerFile = `${config.root}/${opts.unstable_honoEnhancer}`;
+            }
             const { deploy, unstable_phase } = buildOptions;
             if (unstable_phase !== 'buildServerBundle' && unstable_phase !== 'buildSsrBundle' || deploy !== 'deno') {
                 return;
@@ -76,7 +81,7 @@ export function deployDenoPlugin(opts) {
         },
         load (id) {
             if (id === `${opts.srcDir}/${SERVE_JS}`) {
-                return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile);
+                return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile, honoEnhancerFile);
             }
         }
     };

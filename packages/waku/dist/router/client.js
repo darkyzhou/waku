@@ -23,7 +23,8 @@ const parseRoute = (url)=>{
     };
 };
 const parseRouteFromLocation = ()=>{
-    if (globalThis.__WAKU_ROUTER_404__) {
+    const httpStatusMeta = document.querySelector('meta[name="httpstatus"]');
+    if (httpStatusMeta && 'content' in httpStatusMeta && httpStatusMeta.content === '404') {
         return {
             path: '/404',
             query: '',
@@ -32,6 +33,7 @@ const parseRouteFromLocation = ()=>{
     }
     return parseRoute(new URL(window.location.href));
 };
+const isAltClick = (event)=>event.button !== 0 || !!(event.metaKey || event.altKey || event.ctrlKey || event.shiftKey);
 let savedRscParams;
 const createRscParams = (query)=>{
     if (savedRscParams && savedRscParams[0] === query) {
@@ -47,7 +49,7 @@ const createRscParams = (query)=>{
     return rscParams;
 };
 const RouterContext = createContext(null);
-export function useRouter_UNSTABLE() {
+export function useRouter() {
     const router = useContext(RouterContext);
     if (!router) {
         throw new Error('Missing Router');
@@ -144,8 +146,7 @@ export function Link({ to, children, scroll, unstable_pending, unstable_notPendi
         router,
         to
     ]);
-    const onClick = (event)=>{
-        event.preventDefault();
+    const internalOnClick = ()=>{
         const url = new URL(to, window.location.href);
         if (url.href !== window.location.href) {
             const route = parseRoute(url);
@@ -161,7 +162,15 @@ export function Link({ to, children, scroll, unstable_pending, unstable_notPendi
                 });
             });
         }
-        props.onClick?.(event);
+    };
+    const onClick = (event)=>{
+        if (props.onClick) {
+            props.onClick(event);
+        }
+        if (!event.defaultPrevented && !isAltClick(event)) {
+            event.preventDefault();
+            internalOnClick();
+        }
     };
     const onMouseEnter = unstable_prefetchOnEnter ? (event)=>{
         const url = new URL(to, window.location.href);
@@ -482,14 +491,17 @@ export function Router({ routerData = DEFAULT_ROUTER_DATA, initialRoute = parseR
 /**
  * ServerRouter for SSR
  * This is not a public API.
- */ export function INTERNAL_ServerRouter({ route }) {
+ */ export function INTERNAL_ServerRouter({ route, httpstatus }) {
     const routeElement = createElement(Slot, {
         id: getRouteSlotId(route.path)
     });
     const rootElement = createElement(Slot, {
         id: 'root',
         unstable_handleError: null
-    }, routeElement);
+    }, createElement('meta', {
+        name: 'httpstatus',
+        content: `${httpstatus}`
+    }), routeElement);
     return createElement(Fragment, null, createElement(RouterContext.Provider, {
         value: {
             route,

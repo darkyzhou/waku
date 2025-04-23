@@ -93,7 +93,7 @@ export const handler = (options)=>{
                 return entriesPrd.loadModule(fileId + '.js');
             }
         };
-        const htmlHead = !devServer && entriesPrd.dynamicHtmlPaths.find(([pathSpec])=>getPathMapping(pathSpec, ctx.req.url.pathname))?.[1] || '';
+        const htmlHead = devServer ? '' : entriesPrd.dynamicHtmlPaths.find(([pathSpec])=>getPathMapping(pathSpec, ctx.req.url.pathname))?.[1] || entriesPrd.defaultHtmlHead;
         const transformIndexHtml = devServer && await devServer.transformIndexHtml(ctx.req.url.pathname);
         const utils = {
             renderRsc: (elements)=>renderRsc(config, ctx, elements, options.unstable_onError),

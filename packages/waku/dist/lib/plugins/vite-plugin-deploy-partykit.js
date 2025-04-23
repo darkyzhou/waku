@@ -3,12 +3,15 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { unstable_getBuildOptions, unstable_builderConstants } from '../../server.js';
 const { SRC_ENTRIES, DIST_PUBLIC } = unstable_builderConstants;
 const SERVE_JS = 'serve-partykit.js';
-const getServeJsContent = (srcEntriesFile)=>`
+const getServeJsContent = (srcEntriesFile, honoEnhancerFile)=>`
 import { serverEngine, importHono } from 'waku/unstable_hono';
 
 const { Hono } = await importHono();
 
 const loadEntries = () => import('${srcEntriesFile}');
+const loadHonoEnhancer = async () => {
+  ${honoEnhancerFile ? `return (await import('${honoEnhancerFile}')).default;` : `return (fn) => fn;`}
+};
 let serve;
 let app;
 
@@ -38,10 +41,7 @@ export default {
       serve = serverEngine({ cmd: 'start', loadEntries, env: lobby, unstable_onError: new Set() });
     }
     if (!app) {
-      const entries = await loadEntries();
-      const config = await entries.loadConfig();
-      const honoEnhancer =
-        config.unstable_honoEnhancer || ((createApp) => createApp);
+      const honoEnhancer = await loadHonoEnhancer();
       app = honoEnhancer(createApp)(new Hono());
     }
     return app.fetch(request, lobby, ctx);
@@ -52,6 +52,7 @@ export function deployPartykitPlugin(opts) {
     const buildOptions = unstable_getBuildOptions();
     let rootDir;
     let entriesFile;
+    let honoEnhancerFile;
     return {
         name: 'deploy-partykit-plugin',
         config (viteConfig) {
@@ -67,6 +68,9 @@ export function deployPartykitPlugin(opts) {
         configResolved (config) {
             rootDir = config.root;
             entriesFile = `${rootDir}/${opts.srcDir}/${SRC_ENTRIES}`;
+            if (opts.unstable_honoEnhancer) {
+                honoEnhancerFile = `${rootDir}/${opts.unstable_honoEnhancer}`;
+            }
             const { deploy, unstable_phase } = buildOptions;
             if (unstable_phase !== 'buildServerBundle' && unstable_phase !== 'buildSsrBundle' || deploy !== 'partykit') {
                 return;
@@ -85,7 +89,7 @@ export function deployPartykitPlugin(opts) {
         },
         load (id) {
             if (id === `${opts.srcDir}/${SERVE_JS}`) {
-                return getServeJsContent(entriesFile);
+                return getServeJsContent(entriesFile, honoEnhancerFile);
             }
         },
         closeBundle () {

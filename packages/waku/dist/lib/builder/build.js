@@ -4,7 +4,7 @@ import { build as buildVite, resolveConfig as resolveViteConfig } from 'vite';
 import viteReact from '@vitejs/plugin-react';
 import { INTERNAL_setAllEnv, unstable_getBuildOptions } from '../../server.js';
 import { resolveConfigDev } from '../config.js';
-import { decodeFilePathFromAbsolute, extname, filePathToFileURL, fileURLToFilePath, joinPath } from '../utils/path.js';
+import { extname, filePathToFileURL, joinPath } from '../utils/path.js';
 import { extendViteConfig } from '../utils/vite-config.js';
 import { copyFile, createWriteStream, existsSync, mkdir, readdir, readFile, unlink, writeFile } from '../utils/node-fs.js';
 import { encodeRscPath, generatePrefetchCode } from '../renderers/utils.js';
@@ -49,21 +49,9 @@ const deployPlugins = (config)=>[
         deployTxikiPlugin(config)
     ];
 const analyzeEntries = async (rootDir, config)=>{
-    const wakuClientDist = decodeFilePathFromAbsolute(joinPath(fileURLToFilePath(import.meta.url), '../../../client.js'));
-    const wakuMinimalClientDist = decodeFilePathFromAbsolute(joinPath(fileURLToFilePath(import.meta.url), '../../../minimal/client.js'));
-    const clientFileMap = new Map([
-        // FIXME 'lib' should be the real hash
-        [
-            wakuClientDist,
-            'lib'
-        ],
-        [
-            wakuMinimalClientDist,
-            'lib'
-        ]
-    ]);
+    const clientFileMap = new Map();
     const serverFileMap = new Map();
-    const moduleFileMap = new Map(); // module id -> full path
+    const serverPageFiles = {}; // page id -> full path
     const pagesDirPath = joinPath(rootDir, config.srcDir, config.pagesDir);
     if (existsSync(pagesDirPath)) {
         const files = await readdir(pagesDirPath, {
@@ -73,7 +61,7 @@ const analyzeEntries = async (rootDir, config)=>{
         for (const file of files){
             const ext = extname(file);
             if (EXTENSIONS.includes(ext)) {
-                moduleFileMap.set(joinPath(config.pagesDir, file.slice(0, -ext.length)), joinPath(pagesDirPath, file));
+                serverPageFiles[joinPath(config.pagesDir, file.slice(0, -ext.length))] = joinPath(pagesDirPath, file);
             }
         }
     }
@@ -106,18 +94,20 @@ const analyzeEntries = async (rootDir, config)=>{
         build: {
             write: false,
             ssr: true,
-            target: 'node18',
+            target: 'node20',
             rollupOptions: {
                 onwarn,
-                input: Object.fromEntries(moduleFileMap)
+                input: {
+                    ...SERVER_MODULE_MAP,
+                    ...serverPageFiles
+                },
+                output: {
+                    inlineDynamicImports: false
+                }
             }
         }
     }, config, 'build-analyze'));
-    let clientEntryFiles = Object.fromEntries(Array.from(clientFileMap).map(([fname, hash], i)=>[
-            `${DIST_ASSETS}/rsc${i}-${hash}`,
-            fname
-        ]));
-    await buildVite(extendViteConfig({
+    const clientAnalyzeOutput = await buildVite(extendViteConfig({
         mode: 'production',
         plugins: [
             rscAnalyzePlugin({
@@ -138,30 +128,52 @@ const analyzeEntries = async (rootDir, config)=>{
         build: {
             write: false,
             ssr: true,
-            target: 'node18',
+            target: 'node20',
             rollupOptions: {
                 onwarn,
-                input: clientEntryFiles
+                input: {
+                    ...CLIENT_MODULE_MAP,
+                    ...Object.fromEntries(Array.from(clientFileMap).map(([fname, hash], i)=>[
+                            `${DIST_ASSETS}/rsc${i}-${hash}`,
+                            fname
+                        ]))
+                },
+                output: {
+                    inlineDynamicImports: false
+                }
             }
         }
     }, config, 'build-analyze'));
-    clientEntryFiles = Object.fromEntries(Array.from(clientFileMap).map(([fname, hash], i)=>[
-            `${DIST_ASSETS}/rsc${i}-${hash}`,
-            fname
-        ]));
-    const serverEntryFiles = Object.fromEntries(Array.from(serverFileMap).map(([fname, hash], i)=>[
-            `${DIST_ASSETS}/rsf${i}-${hash}`,
-            fname
-        ]));
-    const serverModuleFiles = Object.fromEntries(moduleFileMap);
+    if (!('output' in clientAnalyzeOutput)) {
+        throw new Error('Unexpected vite client analyze output');
+    }
+    const clientEntryFiles = {};
+    const clientEntryAliasMap = new Map();
+    let index = 0;
+    for (const [fname, hash] of clientFileMap){
+        const entry = `${DIST_ASSETS}/rsc${index++}-${hash}`;
+        clientEntryFiles[entry] = fname;
+        for (const key of Object.keys(CLIENT_MODULE_MAP)){
+            if (clientAnalyzeOutput.output.find((item)=>item.type === 'chunk' && item.name === key && item.moduleIds.includes(fname))) {
+                clientEntryAliasMap.set(key, entry);
+            }
+        }
+    }
+    const serverEntryFiles = {};
+    index = 0;
+    for (const [fname, hash] of serverFileMap){
+        const entry = `${DIST_ASSETS}/rsf${index++}-${hash}`;
+        serverEntryFiles[entry] = fname;
+    }
     return {
         clientEntryFiles,
         serverEntryFiles,
-        serverModuleFiles
+        serverPageFiles,
+        clientEntryAliasMap
     };
 };
 // For RSC
-const buildServerBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverModuleFiles, partial)=>{
+const buildServerBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverPageFiles, clientEntryAliasMap, partial)=>{
     const serverBuildOutput = await buildVite(extendViteConfig({
         mode: 'production',
         plugins: [
@@ -186,24 +198,23 @@ const buildServerBundle = async (rootDir, env, config, clientEntryFiles, serverE
             rscEntriesPlugin({
                 basePath: config.basePath,
                 rscBase: config.rscBase,
+                middleware: config.middleware,
+                rootDir,
                 srcDir: config.srcDir,
                 ssrDir: DIST_SSR,
                 moduleMap: {
-                    ...Object.fromEntries(Object.keys(SERVER_MODULE_MAP).map((key)=>[
-                            key,
-                            `./${key}.js`
+                    ...SERVER_MODULE_MAP,
+                    ...Object.fromEntries(Object.entries(serverEntryFiles).map(([key, val])=>[
+                            `${key}.js`,
+                            val
                         ])),
                     ...Object.fromEntries(Object.keys(CLIENT_MODULE_MAP).map((key)=>[
                             `${CLIENT_PREFIX}${key}`,
-                            `./${DIST_SSR}/${key}.js`
+                            `./${DIST_SSR}/${clientEntryAliasMap.get(key) || key}.js`
                         ])),
-                    ...Object.fromEntries(Object.keys(clientEntryFiles || {}).map((key)=>[
+                    ...Object.fromEntries(Object.keys(clientEntryFiles).map((key)=>[
                             `${DIST_SSR}/${key}.js`,
                             `./${DIST_SSR}/${key}.js`
-                        ])),
-                    ...Object.fromEntries(Object.keys(serverEntryFiles || {}).map((key)=>[
-                            `${key}.js`,
-                            `./${key}.js`
                         ]))
                 }
             }),
@@ -231,15 +242,15 @@ const buildServerBundle = async (rootDir, env, config, clientEntryFiles, serverE
             emptyOutDir: !partial,
             ssr: true,
             ssrEmitAssets: true,
-            target: 'node18',
+            target: 'node20',
             outDir: joinPath(rootDir, config.distDir),
             rollupOptions: {
                 onwarn,
                 input: {
-                    ...SERVER_MODULE_MAP,
-                    ...serverModuleFiles,
                     ...clientEntryFiles,
-                    ...serverEntryFiles
+                    ...serverEntryFiles,
+                    ...SERVER_MODULE_MAP,
+                    ...serverPageFiles
                 }
             }
         }
@@ -247,13 +258,16 @@ const buildServerBundle = async (rootDir, env, config, clientEntryFiles, serverE
     if (!('output' in serverBuildOutput)) {
         throw new Error('Unexpected vite server build output');
     }
-    return serverBuildOutput;
-};
-// For SSR (render client components on server to generate HTML)
-const buildSsrBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverBuildOutput, partial)=>{
-    const cssAssets = serverBuildOutput.output.flatMap(({ type, fileName })=>type === 'asset' && fileName.endsWith('.css') ? [
+    const serverAssets = serverBuildOutput.output.flatMap(({ type, fileName })=>type === 'asset' ? [
             fileName
         ] : []);
+    return {
+        serverAssets
+    };
+};
+// For SSR (render client components on server to generate HTML)
+const buildSsrBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverAssets, partial)=>{
+    const cssAssets = serverAssets.filter((fileName)=>fileName.endsWith('.css'));
     await buildVite(extendViteConfig({
         mode: 'production',
         base: config.basePath,
@@ -293,7 +307,7 @@ const buildSsrBundle = async (rootDir, env, config, clientEntryFiles, serverEntr
         build: {
             emptyOutDir: !partial,
             ssr: true,
-            target: 'node18',
+            target: 'node20',
             outDir: joinPath(rootDir, config.distDir, DIST_SSR),
             rollupOptions: {
                 onwarn,
@@ -314,10 +328,8 @@ const buildSsrBundle = async (rootDir, env, config, clientEntryFiles, serverEntr
     }, config, 'build-ssr'));
 };
 // For Browsers
-const buildClientBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverBuildOutput, partial)=>{
-    const nonJsAssets = serverBuildOutput.output.flatMap(({ type, fileName })=>type === 'asset' && !fileName.endsWith('.js') ? [
-            fileName
-        ] : []);
+const buildClientBundle = async (rootDir, env, config, clientEntryFiles, serverEntryFiles, serverAssets, partial)=>{
+    const nonJsAssets = serverAssets.filter((fileName)=>!fileName.endsWith('.js'));
     const cssAssets = nonJsAssets.filter((asset)=>asset.endsWith('.css'));
     const clientBuildOutput = await buildVite(extendViteConfig({
         mode: 'production',
@@ -368,12 +380,17 @@ const buildClientBundle = async (rootDir, env, config, clientEntryFiles, serverE
     if (!('output' in clientBuildOutput)) {
         throw new Error('Unexpected vite client build output');
     }
+    const clientAssets = clientBuildOutput.output.flatMap(({ type, fileName })=>type === 'asset' ? [
+            fileName
+        ] : []);
     for (const nonJsAsset of nonJsAssets){
         const from = joinPath(rootDir, config.distDir, nonJsAsset);
         const to = joinPath(rootDir, config.distDir, DIST_PUBLIC, nonJsAsset);
         await copyFile(from, to);
     }
-    return clientBuildOutput;
+    return {
+        clientAssets
+    };
 };
 // TODO: Add progress indication for static builds.
 const createTaskRunner = (limit)=>{
@@ -493,6 +510,7 @@ const emitStaticFiles = async (rootDir, config, distEntriesFile, distEntries, cs
     let distEntriesFileContent = await readFile(distEntriesFile, {
         encoding: 'utf8'
     });
+    distEntriesFileContent = distEntriesFileContent.replace('globalThis.__WAKU_DEFAULT_HTML_HEAD__', JSON.stringify(defaultHtmlHead));
     distEntriesFileContent = distEntriesFileContent.replace('globalThis.__WAKU_DYNAMIC_HTML_PATHS__', JSON.stringify(dynamicHtmlPaths));
     distEntriesFileContent = distEntriesFileContent.replace('globalThis.__WAKU_PUBLIC_INDEX_HTML__', JSON.stringify(defaultHtmlStr));
     await writeFile(distEntriesFile, distEntriesFileContent);
@@ -501,7 +519,7 @@ const emitStaticFiles = async (rootDir, config, distEntriesFile, distEntries, cs
 // FIXME Is this a good approach? I wonder if there's something missing.
 const buildDeploy = async (rootDir, config)=>{
     const DUMMY = 'dummy-entry';
-    await buildVite({
+    await buildVite(extendViteConfig({
         plugins: [
             {
                 // FIXME This is too hacky. There must be a better way.
@@ -542,7 +560,7 @@ const buildDeploy = async (rootDir, config)=>{
             },
             outDir: joinPath(rootDir, config.distDir)
         }
-    });
+    }, config, 'build-deploy'));
 };
 export async function build(options) {
     const env = options.env || {};
@@ -552,19 +570,17 @@ export async function build(options) {
     const buildOptions = unstable_getBuildOptions();
     buildOptions.deploy = options.deploy;
     buildOptions.unstable_phase = 'analyzeEntries';
-    const { clientEntryFiles, serverEntryFiles, serverModuleFiles } = await analyzeEntries(rootDir, config);
+    const { clientEntryFiles, serverEntryFiles, serverPageFiles, clientEntryAliasMap } = await analyzeEntries(rootDir, config);
     buildOptions.unstable_phase = 'buildServerBundle';
-    const serverBuildOutput = await buildServerBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverModuleFiles, !!options.partial);
+    const { serverAssets } = await buildServerBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverPageFiles, clientEntryAliasMap, !!options.partial);
     buildOptions.unstable_phase = 'buildSsrBundle';
-    await buildSsrBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverBuildOutput, !!options.partial);
+    await buildSsrBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverAssets, !!options.partial);
     buildOptions.unstable_phase = 'buildClientBundle';
-    const clientBuildOutput = await buildClientBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverBuildOutput, !!options.partial);
+    const { clientAssets } = await buildClientBundle(rootDir, env, config, clientEntryFiles, serverEntryFiles, serverAssets, !!options.partial);
     delete buildOptions.unstable_phase;
     const distEntries = await import(filePathToFileURL(distEntriesFile));
     INTERNAL_setAllEnv(env);
-    const cssAssets = clientBuildOutput.output.flatMap(({ type, fileName })=>type === 'asset' && fileName.endsWith('.css') ? [
-            fileName
-        ] : []);
+    const cssAssets = clientAssets.filter((fileName)=>fileName.endsWith('.css'));
     buildOptions.unstable_phase = 'emitStaticFiles';
     await emitStaticFiles(rootDir, config, distEntriesFile, distEntries, cssAssets);
     buildOptions.unstable_phase = 'buildDeploy';

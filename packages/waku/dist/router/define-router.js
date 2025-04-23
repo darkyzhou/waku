@@ -9,16 +9,37 @@ import { stringToStream } from '../lib/utils/stream.js';
 import { createCustomError, getErrorInfo } from '../lib/utils/custom-errors.js';
 const isStringArray = (x)=>Array.isArray(x) && x.every((y)=>typeof y === 'string');
 const parseRscParams = (rscParams)=>{
-    if (!(rscParams instanceof URLSearchParams)) {
+    if (rscParams instanceof URLSearchParams) {
         return {
-            query: ''
+            query: rscParams.get('query') || ''
         };
     }
-    const query = rscParams.get('query') || '';
+    if (typeof rscParams?.query === 'string') {
+        return {
+            query: rscParams.query
+        };
+    }
     return {
-        query
+        query: ''
     };
 };
+const RSC_PARAMS_SYMBOL = Symbol('RSC_PARAMS');
+const setRscParams = (rscParams)=>{
+    try {
+        const context = getContext();
+        context[RSC_PARAMS_SYMBOL] = rscParams;
+    } catch  {
+    // ignore
+    }
+};
+export function unstable_getRscParams() {
+    try {
+        const context = getContext();
+        return context[RSC_PARAMS_SYMBOL];
+    } catch  {
+        return undefined;
+    }
+}
 const RERENDER_SYMBOL = Symbol('RERENDER');
 const setRerender = (rerender)=>{
     try {
@@ -121,6 +142,7 @@ export function unstable_defineRouter(fns) {
         return pathConfig.some(({ specs: { is404 } })=>is404);
     };
     const getEntries = async (rscPath, rscParams, headers)=>{
+        setRscParams(rscParams);
         const pathname = decodeRoutePath(rscPath);
         const pathConfigItem = await getPathConfigItem(pathname);
         if (!pathConfigItem) {
@@ -212,7 +234,7 @@ export function unstable_defineRouter(fns) {
             });
         }
         if (input.type === 'action' || input.type === 'custom') {
-            const renderIt = async (pathname, query)=>{
+            const renderIt = async (pathname, query, httpstatus = 200)=>{
                 const rscPath = encodeRoutePath(pathname);
                 const rscParams = new URLSearchParams({
                     query
@@ -226,7 +248,8 @@ export function unstable_defineRouter(fns) {
                         path: pathname,
                         query,
                         hash: ''
-                    }
+                    },
+                    httpstatus
                 });
                 const actionResult = input.type === 'action' ? await input.fn() : undefined;
                 return renderHtml(entries, html, {
@@ -250,7 +273,7 @@ export function unstable_defineRouter(fns) {
             }
             if (await has404()) {
                 return {
-                    ...await renderIt('/404', ''),
+                    ...await renderIt('/404', '', 404),
                     status: 404
                 };
             } else {
@@ -325,7 +348,7 @@ globalThis.__WAKU_ROUTER_PREFETCH__ = (path) => {
                         const rscPath = encodeRoutePath(pathname);
                         const code = unstable_generatePrefetchCode([
                             rscPath
-                        ], moduleIds) + getRouterPrefetchCode() + (specs.is404 ? 'globalThis.__WAKU_ROUTER_404__ = true;' : '');
+                        ], moduleIds) + getRouterPrefetchCode();
                         const entries = entriesCache.get(pathname);
                         if (specs.isStatic && entries) {
                             const html = createElement(INTERNAL_ServerRouter, {
@@ -333,7 +356,8 @@ globalThis.__WAKU_ROUTER_PREFETCH__ = (path) => {
                                     path: pathname,
                                     query: '',
                                     hash: ''
-                                }
+                                },
+                                httpstatus: specs.is404 ? 404 : 200
                             });
                             return {
                                 type: 'file',
@@ -345,7 +369,7 @@ globalThis.__WAKU_ROUTER_PREFETCH__ = (path) => {
                             };
                         }
                     }
-                    const code = unstable_generatePrefetchCode([], moduleIds) + getRouterPrefetchCode() + (specs.is404 ? 'globalThis.__WAKU_ROUTER_404__ = true;' : '');
+                    const code = unstable_generatePrefetchCode([], moduleIds) + getRouterPrefetchCode();
                     return {
                         type: 'htmlHead',
                         pathSpec,

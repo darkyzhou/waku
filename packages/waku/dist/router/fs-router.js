@@ -5,7 +5,7 @@ import { isIgnoredPath } from '../lib/utils/fs-router.js';
 const DO_NOT_BUNDLE = '';
 export function unstable_fsRouter(importMetaUrl, loadPage, options) {
     const buildOptions = unstable_getBuildOptions();
-    return createPages(async ({ createPage, createLayout, createRoot, createApi })=>{
+    return createPages(async ({ createPage, createLayout, createRoot, createApi, createPagePart })=>{
         let files = await unstable_getPlatformData('fsRouterFiles');
         if (!files) {
             // dev and build only
@@ -64,7 +64,7 @@ export function unstable_fsRouter(importMetaUrl, loadPage, options) {
                 '_layout',
                 'index',
                 '_root'
-            ].includes(pathItems.at(-1)) ? pathItems.slice(0, -1) : pathItems).join('/');
+            ].includes(pathItems.at(-1)) || pathItems.at(-1)?.startsWith('_part') ? pathItems.slice(0, -1) : pathItems).join('/');
             if (pathItems.at(-1) === '[path]') {
                 throw new Error('Page file cannot be named [path]. This will conflict with the path prop of the page component.');
             } else if (pathItems.at(0) === options.apiDir) {
@@ -80,12 +80,22 @@ export function unstable_fsRouter(importMetaUrl, loadPage, options) {
                     });
                 } else {
                     const validMethods = new Set(METHODS);
-                    const handlers = Object.fromEntries(Object.entries(mod).filter(([exportName])=>{
-                        const isValidExport = exportName === 'getConfig' || validMethods.has(exportName);
+                    const handlers = Object.fromEntries(Object.entries(mod).flatMap(([exportName, handler])=>{
+                        const isValidExport = exportName === 'getConfig' || exportName === 'default' || validMethods.has(exportName);
                         if (!isValidExport) {
                             console.warn(`API ${path} has an invalid export: ${exportName}. Valid exports are: ${METHODS.join(', ')}`);
                         }
-                        return isValidExport && exportName !== 'getConfig';
+                        return isValidExport && exportName !== 'getConfig' ? exportName === 'default' ? [
+                            [
+                                'all',
+                                handler
+                            ]
+                        ] : [
+                            [
+                                exportName,
+                                handler
+                            ]
+                        ] : [];
                     }));
                     createApi({
                         path: pathItems.join('/'),
@@ -104,6 +114,18 @@ export function unstable_fsRouter(importMetaUrl, loadPage, options) {
                 createRoot({
                     component: mod.default,
                     render: 'static',
+                    ...config
+                });
+            } else if (pathItems.at(-1)?.startsWith('_part')) {
+                const order = parseInt(pathItems.at(-1).split('-')[0].slice('_part'.length));
+                if (Number.isNaN(order)) {
+                    throw new Error('Invalid page part order: ' + pathItems.at(-1) + '. Please use the following convention: _part[order]-component.tsx');
+                }
+                createPagePart({
+                    path,
+                    component: mod.default,
+                    render: 'dynamic',
+                    order,
                     ...config
                 });
             } else {

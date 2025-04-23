@@ -114,25 +114,17 @@ export function rscHmrPlugin() {
 `);
             }
         },
-        handleHotUpdate ({ file }) {
+        handleHotUpdate ({ file, server }) {
             if (file.endsWith('/pages.gen.ts')) {
                 // auto generated file by fsRouterTypegenPlugin
                 return [];
             }
-            const moduleLoading = globalThis.__WAKU_CLIENT_MODULE_LOADING__;
-            const moduleCache = globalThis.__WAKU_CLIENT_MODULE_CACHE__;
-            if (!moduleLoading || !moduleCache) {
-                return;
-            }
-            if (file.startsWith(viteServer.config.root + '/')) {
-                file = file.slice(viteServer.config.root.length + 1);
-            }
-            const id = filePathToFileURL(file);
-            if (moduleLoading.has(id)) {
-                moduleLoading.set(id, viteServer.ssrLoadModule(file).then((m)=>{
-                    // XXX There can be a race condition, but it should be very rare.
-                    moduleCache.set(id, m);
-                }));
+            handleModuleUpdate(file, server);
+            const module = server.moduleGraph.getModuleById(file);
+            if (module?.file?.endsWith('.module.css')) {
+                module.importers.forEach((importer)=>{
+                    handleModuleUpdate(importer.file, server);
+                });
             }
         }
     };
@@ -211,6 +203,21 @@ export function hotUpdate(vite, payload) {
         hotImport(vite, payload.data);
     } else if (payload.event === 'module-import') {
         moduleImport(vite, payload.data);
+    }
+}
+function handleModuleUpdate(filePath, viteServer) {
+    const moduleLoading = globalThis.__WAKU_CLIENT_MODULE_LOADING__;
+    const moduleCache = globalThis.__WAKU_CLIENT_MODULE_CACHE__;
+    if (!moduleLoading || !moduleCache) {
+        return;
+    }
+    const normalizedPath = filePath.startsWith(viteServer.config.root + '/') ? filePath.slice(viteServer.config.root.length + 1) : filePath;
+    const id = filePathToFileURL(normalizedPath);
+    if (moduleLoading.has(id)) {
+        moduleLoading.set(id, viteServer.ssrLoadModule(normalizedPath).then((m)=>{
+            // XXX There can be a race condition, but it should be very rare.
+            moduleCache.set(id, m);
+        }));
     }
 }
 

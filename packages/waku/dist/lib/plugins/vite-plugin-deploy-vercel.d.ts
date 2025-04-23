@@ -5,4 +5,5 @@ export declare function deployVercelPlugin(opts: {
     basePath: string;
     rscBase: string;
     privateDir: string;
+    unstable_honoEnhancer: string | undefined;
 }): Plugin;

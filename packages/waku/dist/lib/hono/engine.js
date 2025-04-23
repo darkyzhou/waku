@@ -3,10 +3,8 @@ import { resolveConfigDev } from '../config.js';
 const HONO_CONTEXT = '__hono_context';
 // serverEngine returns hono middleware that runs Waku middleware.
 export const serverEngine = (options)=>{
-    const entriesPromise = options.cmd === 'start' ? options.loadEntries() : 'Error: loadEntries are not available';
-    const configPromise = options.cmd === 'start' ? entriesPromise.then((entries)=>// TODO eliminate loadConfig
-        entries.loadConfig().then((config)=>resolveConfigDev(config))) : resolveConfigDev(options.config);
-    const handlersPromise = configPromise.then((config)=>Promise.all(config.middleware().map(async (middleware)=>(await middleware).default(options))));
+    const middlewarePromise = options.cmd === 'start' ? options.loadEntries().then((entries)=>entries.loadMiddleware()) : resolveConfigDev(options.config).then((config)=>loadMiddlewareDev(config));
+    const handlersPromise = middlewarePromise.then((middlewareList)=>middlewareList.map((middleware)=>middleware.default(options)));
     return async (c, next)=>{
         const ctx = {
             req: {
@@ -16,9 +14,6 @@ export const serverEngine = (options)=>{
                 headers: c.req.header()
             },
             res: {},
-            context: {
-                [HONO_CONTEXT]: c
-            },
             data: {
                 [HONO_CONTEXT]: c
             }
@@ -48,5 +43,17 @@ export const serverEngine = (options)=>{
         await next();
     };
 };
+const DO_NOT_BUNDLE = '';
+async function loadMiddlewareDev(configDev) {
+    const [{ resolve }, { pathToFileURL }, { loadServerModule }] = await Promise.all([
+        import(/* @vite-ignore */ DO_NOT_BUNDLE + 'node:path'),
+        import(/* @vite-ignore */ DO_NOT_BUNDLE + 'node:url'),
+        import(/* @vite-ignore */ DO_NOT_BUNDLE + '../utils/vite-loader.js')
+    ]);
+    return Promise.all(configDev.middleware.map(async (file)=>{
+        const idOrFileURL = file.startsWith('./') ? pathToFileURL(resolve(file)).toString() : file;
+        return loadServerModule(idOrFileURL);
+    }));
+}
 
 //# sourceMappingURL=engine.js.map

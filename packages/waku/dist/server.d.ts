@@ -1,5 +1,5 @@
 export * as unstable_builderConstants from './lib/builder/constants.js';
-export { emitPlatformData as unstable_emitPlatfromData } from './lib/builder/platform-data.js';
+export { emitPlatformData as unstable_emitPlatformData } from './lib/builder/platform-data.js';
 /**
  * This is an internal function and not for public use.
  */
