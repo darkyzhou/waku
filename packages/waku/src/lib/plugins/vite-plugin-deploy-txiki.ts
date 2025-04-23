@@ -85,7 +85,7 @@ const parseRequestPayload = (request) => {
     return;
   }
 
-  const [requestLineAndHeaders, body] = request.split("\r\n\r\n");
+  const [requestLineAndHeaders, body] = request.split("\\r\\n\\r\\n");
   const theBody = !body ? undefined : body;
   try {
     const [requestLine, ...requestLines] = requestLineAndHeaders.split("\\r\\n");
