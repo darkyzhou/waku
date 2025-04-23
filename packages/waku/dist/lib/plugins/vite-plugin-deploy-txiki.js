@@ -1,7 +1,7 @@
 import { unstable_getBuildOptions, unstable_builderConstants } from '../../server.js';
 const { SRC_ENTRIES, DIST_PUBLIC } = unstable_builderConstants;
 const SERVE_JS = 'serve-txiki.js';
-const getServeJsContent = (distDir, distPublic, srcEntriesFile)=>`
+const getServeJsContent = (distDir, distPublic, srcEntriesFile, honoEnhancerFile)=>`
 import getopts from "tjs:getopts";
 
 const { serverEngine, importHono, importHonoServeStatic } = await import('waku/unstable_hono');
@@ -11,7 +11,9 @@ const { serveStatic: baseServeStatic } = await importHonoServeStatic();
 const distDir = '${distDir}';
 const publicDir = '${distPublic}';
 const loadEntries = () => import('${srcEntriesFile}');
-const configPromise = loadEntries().then((entries) => entries.loadConfig());
+const loadHonoEnhancer = async () => {
+  ${honoEnhancerFile ? `return (await import('${honoEnhancerFile}')).default;` : `return (fn) => fn;`}
+};
 const env = tjs.env;
 
 const serveStatic = (c, next) => {
@@ -62,7 +64,7 @@ const createApp = (app) => {
   return app;
 };
 
-const HONO_ENHANCER = (await configPromise).unstable_honoEnhancer || ((createApp) => createApp);
+const HONO_ENHANCER = await loadHonoEnhancer();
 const HONO_APP = HONO_ENHANCER(createApp)(new Hono());
 
 const ENCODER = new TextEncoder();
@@ -157,6 +159,7 @@ for await (let connection of listener) {
 export function deployTxikiPlugin(opts) {
     const buildOptions = unstable_getBuildOptions();
     let entriesFile;
+    let honoEnhancerFile;
     return {
         name: 'deploy-txiki-plugin',
         config (viteConfig) {
@@ -171,6 +174,9 @@ export function deployTxikiPlugin(opts) {
         },
         configResolved (config) {
             entriesFile = `${config.root}/${opts.srcDir}/${SRC_ENTRIES}`;
+            if (opts.unstable_honoEnhancer) {
+                honoEnhancerFile = `${config.root}/${opts.unstable_honoEnhancer}`;
+            }
             const { deploy, unstable_phase } = buildOptions;
             if (unstable_phase !== 'buildServerBundle' && unstable_phase !== 'buildSsrBundle' || deploy !== 'txiki') {
                 return;
@@ -206,7 +212,7 @@ export function deployTxikiPlugin(opts) {
         },
         load (id) {
             if (id === `${opts.srcDir}/${SERVE_JS}`) {
-                return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile);
+                return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile, honoEnhancerFile);
             }
         }
     };

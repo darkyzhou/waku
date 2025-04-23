@@ -12,6 +12,7 @@ const getServeJsContent = (
   distDir: string,
   distPublic: string,
   srcEntriesFile: string,
+  honoEnhancerFile: string | undefined,
 ) => `
 import getopts from "tjs:getopts";
 
@@ -22,7 +23,13 @@ const { serveStatic: baseServeStatic } = await importHonoServeStatic();
 const distDir = '${distDir}';
 const publicDir = '${distPublic}';
 const loadEntries = () => import('${srcEntriesFile}');
-const configPromise = loadEntries().then((entries) => entries.loadConfig());
+const loadHonoEnhancer = async () => {
+  ${
+    honoEnhancerFile
+      ? `return (await import('${honoEnhancerFile}')).default;`
+      : `return (fn) => fn;`
+  }
+};
 const env = tjs.env;
 
 const serveStatic = (c, next) => {
@@ -73,7 +80,7 @@ const createApp = (app) => {
   return app;
 };
 
-const HONO_ENHANCER = (await configPromise).unstable_honoEnhancer || ((createApp) => createApp);
+const HONO_ENHANCER = await loadHonoEnhancer();
 const HONO_APP = HONO_ENHANCER(createApp)(new Hono());
 
 const ENCODER = new TextEncoder();
@@ -169,9 +176,11 @@ for await (let connection of listener) {
 export function deployTxikiPlugin(opts: {
   srcDir: string;
   distDir: string;
+  unstable_honoEnhancer: string | undefined;
 }): Plugin {
   const buildOptions = unstable_getBuildOptions();
   let entriesFile: string;
+  let honoEnhancerFile: string | undefined;
   return {
     name: 'deploy-txiki-plugin',
     config(viteConfig) {
@@ -187,6 +196,10 @@ export function deployTxikiPlugin(opts: {
     },
     configResolved(config) {
       entriesFile = `${config.root}/${opts.srcDir}/${SRC_ENTRIES}`;
+
+      if (opts.unstable_honoEnhancer) {
+        honoEnhancerFile = `${config.root}/${opts.unstable_honoEnhancer}`;
+      }
 
       const { deploy, unstable_phase } = buildOptions;
       if (
@@ -227,7 +240,7 @@ export function deployTxikiPlugin(opts: {
     },
     load(id) {
       if (id === `${opts.srcDir}/${SERVE_JS}`) {
-        return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile);
+        return getServeJsContent(opts.distDir, DIST_PUBLIC, entriesFile, honoEnhancerFile);
       }
     },
   };
